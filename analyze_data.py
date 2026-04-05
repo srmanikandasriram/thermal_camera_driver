@@ -74,6 +74,10 @@ def load_thermal_data(file_path: str, is_dual: bool = False) -> Dict[str, Any]:
         # First, try loading as regular npz file
         data = np.load(file_path)
         print("Loaded uncompressed data file")
+        for key in data.files:
+            print(f"Key: {key}")
+            print(f"Shape: {data[key].shape}")
+            print(f"Data type: {data[key].dtype}")
     except (ValueError, OSError, zipfile.BadZipFile) as e:
         # If that fails, try decompressing with zstandard first
         try:
@@ -168,6 +172,21 @@ def display_statistics(data: Dict[str, Any], is_dual: bool = False) -> None:
         print_temperature_stats(temp_stats)
 
 
+def strip_telemetry(frame: np.ndarray) -> np.ndarray:
+    """
+    Strip telemetry rows from a single thermal frame.
+
+    Boson: telemetry is the first 2 rows  (height > 512, e.g. 514).
+    Lepton: telemetry is the last 2 rows  (height <= 512, e.g. 122).
+    """
+    h = frame.shape[0]
+    if h > 512:
+        return frame[2:, ...]
+    if h > 2:
+        return frame[:-2, ...]
+    return frame
+
+
 def analyze_temperature_stats(frames: np.ndarray) -> Dict[str, float]:
     """
     Analyze temperature statistics from thermal frames.
@@ -178,11 +197,7 @@ def analyze_temperature_stats(frames: np.ndarray) -> Dict[str, float]:
     Returns:
         Dictionary with temperature statistics
     """
-    # Remove telemetry rows (first 2 rows) if present
-    if frames.shape[1] > 512:  # 514 height indicates telemetry present
-        thermal_frames = frames[:, 2:, :]  # Remove first 2 rows
-    else:
-        thermal_frames = frames
+    thermal_frames = np.stack([strip_telemetry(f) for f in frames])
     
     # Calculate statistics
     min_temp = np.min(thermal_frames)
@@ -226,17 +241,8 @@ def play_thermal_video(data: Dict[str, Any], is_dual: bool = False) -> None:
         cv2.namedWindow("Camera B", cv2.WINDOW_NORMAL)
         
         for i in range(min(len(frames_a), len(frames_b))):
-            # Process frame A
-            frame_a = frames_a[i]
-            if frame_a.shape[0] > 512:  # Remove telemetry if present
-                frame_a = frame_a[2:, :]
-            frame_a = normalize_frame(frame_a)
-            
-            # Process frame B  
-            frame_b = frames_b[i]
-            if frame_b.shape[0] > 512:  # Remove telemetry if present
-                frame_b = frame_b[2:, :]
-            frame_b = normalize_frame(frame_b)
+            frame_a = normalize_frame(strip_telemetry(frames_a[i]))
+            frame_b = normalize_frame(strip_telemetry(frames_b[i]))
             
             cv2.imshow("Camera A", frame_a)
             cv2.imshow("Camera B", frame_b)
@@ -251,10 +257,7 @@ def play_thermal_video(data: Dict[str, Any], is_dual: bool = False) -> None:
         cv2.namedWindow("Thermal Camera", cv2.WINDOW_NORMAL)
         
         for frame in frames:
-            if frame.shape[0] > 512:  # Remove telemetry if present
-                frame = frame[2:, :]
-            
-            display_frame = normalize_frame(frame)
+            display_frame = normalize_frame(strip_telemetry(frame))
             cv2.imshow("Thermal Camera", display_frame)
             
             key = cv2.waitKey(30) & 0xFF
@@ -271,16 +274,23 @@ def normalize_frame(frame: np.ndarray) -> np.ndarray:
     Normalize thermal frame for display.
     
     Args:
-        frame: Raw thermal frame
+        frame: Raw thermal frame (2-D single-channel expected)
         
     Returns:
         Normalized frame with colormap applied
     """
-    # Normalize to 0-255
+    if frame.ndim > 2:
+        frame = frame.squeeze()
+    if frame.ndim == 3:
+        if frame.shape[-1] == 3:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        elif frame.shape[-1] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
+        else:
+            frame = frame[:, :, 0]
+
     frame_norm = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX)
     frame_norm = np.uint8(frame_norm)
-    
-    # Apply colormap
     frame_color = cv2.applyColorMap(frame_norm, cv2.COLORMAP_TURBO)
     
     return frame_color
@@ -305,27 +315,16 @@ def export_frames(data: Dict[str, Any], output_dir: str, is_dual: bool = False) 
         frames_b = data['raw_thr_frames_B']
         
         for i in range(min(len(frames_a), len(frames_b))):
-            # Process and save frame A
-            frame_a = frames_a[i]
-            if frame_a.shape[0] > 512:
-                frame_a = frame_a[2:, :]
-            frame_a = normalize_frame(frame_a)
+            frame_a = normalize_frame(strip_telemetry(frames_a[i]))
             cv2.imwrite(str(output_path / f"camera_A_frame_{i:06d}.png"), frame_a)
             
-            # Process and save frame B
-            frame_b = frames_b[i]
-            if frame_b.shape[0] > 512:
-                frame_b = frame_b[2:, :]
-            frame_b = normalize_frame(frame_b)
+            frame_b = normalize_frame(strip_telemetry(frames_b[i]))
             cv2.imwrite(str(output_path / f"camera_B_frame_{i:06d}.png"), frame_b)
     else:
         frames = data['raw_thr_frames']
         
         for i, frame in enumerate(frames):
-            if frame.shape[0] > 512:
-                frame = frame[2:, :]
-            
-            frame_color = normalize_frame(frame)
+            frame_color = normalize_frame(strip_telemetry(frame))
             cv2.imwrite(str(output_path / f"frame_{i:06d}.png"), frame_color)
     
     print(f"Exported {len(frames) if not is_dual else min(len(frames_a), len(frames_b))} frames")

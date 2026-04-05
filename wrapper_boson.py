@@ -52,12 +52,21 @@ class BosonWithTelemetry(ThreadedBoson):
         # Initialize logging attributes
         self.logged_images = []
         self.logged_tstamps = []
+        self.logged_cam_tstamps = []
+        self.logged_frame_numbers = []
         self.enable_logging = False
 
     def __del__(self):
         """Cleanup resources when object is destroyed."""
-        self.stop()
-        self.camera.close()
+        try:
+            self.stop()
+        except Exception:
+            pass
+        if getattr(self, "camera", None) is not None:
+            try:
+                self.camera.close()
+            except Exception:
+                pass
     
     def stop_logging(self) -> None:
         """Stop logging thermal frames and timestamps."""
@@ -71,13 +80,27 @@ class BosonWithTelemetry(ThreadedBoson):
     def post_cap_hook(self, image: np.ndarray) -> None:
         """
         Callback function executed after each frame capture.
-        
+
+        Logs the full frame (with telemetry header rows) and parses
+        camera-internal timestamps and frame numbers from the telemetry,
+        mirroring LeptonWrapper's _post_capture_hook behaviour.
+
         Args:
-            image: Captured thermal image array
+            image: Captured thermal image array (includes 2 telemetry rows)
         """
         if self.enable_logging:
+            capture_time = time.time()
             self.logged_images.append(image)
-            self.logged_tstamps.append(time.time())
+            self.logged_tstamps.append(capture_time)
+
+            try:
+                telemetry = image[:2, :, 0] if image.ndim == 3 else image[:2, :]
+                frame_number, cam_timestamp = self.parse_telemetry(telemetry)
+                self.logged_cam_tstamps.append(cam_timestamp + self.timestamp_offset)
+                self.logged_frame_numbers.append(frame_number)
+            except Exception:
+                self.logged_cam_tstamps.append(capture_time)
+                self.logged_frame_numbers.append(-1)
 
     def compute_timestamp_offset(self) -> None:
         """
