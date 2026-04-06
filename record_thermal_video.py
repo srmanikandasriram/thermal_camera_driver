@@ -50,15 +50,27 @@ Examples:
                        help='Output file path (will create directories if needed)')
     parser.add_argument('--duration', type=int, default=10,
                        help='Duration of recording in seconds (default: 10)')
+    parser.add_argument('--downsample', type=int, default=1,
+                       help='Temporal downsample factor for frames (default: 1, no downsampling)')
     parser.add_argument('--compress', action='store_true',
                        help='Compress output using zstandard compression')
+    parser.add_argument('--disable-auto-ffc', action='store_true',
+                       help='Disable automatic FFC for the recording session')
+    parser.add_argument('--force-ffc-at-init', action='store_true',
+                       help='Force FFC at initialization')
+    parser.add_argument('--leave-ffc-disabled', action='store_true',
+                       help='Leave FFC disabled after recording')
     return parser.parse_args()
 
 
-def initialize_camera() -> Optional[BosonWithTelemetry]:
+def initialize_camera(disable_auto_ffc: bool, force_ffc_at_init: bool) -> Optional[BosonWithTelemetry]:
     """
     Initialize and configure the thermal camera.
     
+    Args:
+        disable_auto_ffc: Whether to disable automatic FFC during recording
+        force_ffc_at_init: Whether to force FFC at initialization 
+        
     Returns:
         Configured camera object or None if initialization fails
     """
@@ -66,12 +78,17 @@ def initialize_camera() -> Optional[BosonWithTelemetry]:
         print("Connecting to thermal camera...")
         camera = BosonWithTelemetry()
         
-        # Set FFC to manual mode and perform calibration
-        camera.camera.set_ffc_manual()
-        camera.camera.do_ffc()
-        time.sleep(1)  # Allow FFC to complete
-        
-        print("Camera connected successfully. FFC performed.")
+        if disable_auto_ffc:
+            # Disable automatic FFC during recording
+            camera.camera.set_ffc_manual()
+
+        if force_ffc_at_init:
+            # Force FFC at initialization
+            camera.camera.do_ffc()
+            time.sleep(1)  # Allow FFC to complete
+            print("Forced FFC performed at initialization.")
+
+        print("Camera connected successfully.")
         return camera
         
     except Exception as e:
@@ -83,13 +100,14 @@ def initialize_camera() -> Optional[BosonWithTelemetry]:
         return None
 
 
-def record_thermal_data(camera: BosonWithTelemetry, duration: int) -> bool:
+def record_thermal_data(camera: BosonWithTelemetry, duration: int, downsample: int) -> bool:
     """
     Record thermal data for the specified duration.
     
     Args:
         camera: Initialized camera object
         duration: Recording duration in seconds
+        downsample: Temporal downsample factor for frames
         
     Returns:
         True if recording completed successfully, False otherwise
@@ -102,10 +120,11 @@ def record_thermal_data(camera: BosonWithTelemetry, duration: int) -> bool:
         print("Recording cancelled by user.")
         return False
     
-    print("Recording started. Press 'q' to stop early.")
+    camera.set_downsample_factor(downsample)
     start_time = time.time()
     camera.start_logging()
-    
+    print("Recording started. Press 'q' to stop early.")
+
     try:
         with tqdm(total=duration, desc="Recording", unit="s") as pbar:
             while time.time() - start_time < duration:
@@ -174,16 +193,19 @@ def save_data(camera: BosonWithTelemetry, output_file: str, compress: bool) -> N
     print(f"File size: {file_size:.1f} MB")
 
 
-def cleanup_camera(camera: Optional[BosonWithTelemetry]) -> None:
+def cleanup_camera(camera: Optional[BosonWithTelemetry], leave_ffc_disabled: bool = False) -> None:
     """
     Properly cleanup camera resources.
     
     Args:
         camera: Camera object to cleanup (can be None)
+        leave_ffc_disabled: Whether to leave FFC disabled after recording
     """
     if camera:
         try:
-            camera.camera.set_ffc_auto()  # Restore auto FFC
+            if not leave_ffc_disabled:
+                camera.camera.set_ffc_auto()
+                print("FFC reset to automatic mode.")
             camera.stop()
             camera.close()
             print("Camera resources cleaned up.")
@@ -195,6 +217,10 @@ def main() -> None:
     """Main function to orchestrate the recording process."""
     args = parse_args()
 
+    if args.downsample < 1:
+        print("Error: Downsample factor must be >= 1")
+        sys.exit(1)
+
     # Prepare output path
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -203,12 +229,12 @@ def main() -> None:
     camera = None
     try:
         # Initialize camera
-        camera = initialize_camera()
+        camera = initialize_camera(args.enable_auto_ffc, args.force_ffc_at_init)
         if not camera:
             sys.exit(1)
 
         # Record data
-        if record_thermal_data(camera, args.duration):
+        if record_thermal_data(camera, args.duration, args.downsample):
             save_data(camera, output_file, args.compress)
             print("Recording completed successfully!")
         else:
@@ -219,7 +245,7 @@ def main() -> None:
         sys.exit(1)
         
     finally:
-        cleanup_camera(camera)
+        cleanup_camera(camera, args.leave_ffc_disabled)
 
 
 if __name__ == "__main__":

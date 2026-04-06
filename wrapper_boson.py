@@ -47,12 +47,24 @@ class BosonWithTelemetry(ThreadedBoson):
 
         self.configure()
         self.start()
-        self.camera.do_ffc()  # Perform initial flat field correction
+        # self.camera.do_ffc()  # Perform initial flat field correction
         
         # Initialize logging attributes
         self.logged_images = []
         self.logged_tstamps = []
         self.enable_logging = False
+        self.downsample_factor = 1 # No downsampling by default
+
+    def set_downsample_factor(self, factor: int) -> None:
+        """
+        Set the downsample factor for captured frames.
+        
+        Args:
+            factor: Downsample factor (must be >= 1)
+        """
+        if factor < 1:
+            raise ValueError("Downsample factor must be >= 1")
+        self.downsample_factor = factor
 
     def __del__(self):
         """Cleanup resources when object is destroyed."""
@@ -76,6 +88,10 @@ class BosonWithTelemetry(ThreadedBoson):
             image: Captured thermal image array
         """
         if self.enable_logging:
+            if self.downsample_factor > 1:
+                frame_counter, timestamp = self.parse_telemetry(image[:2, :, 0])
+                if frame_counter % self.downsample_factor != 0:
+                    return  # Skip this frame based on downsample factor
             self.logged_images.append(image)
             self.logged_tstamps.append(time.time())
 
@@ -150,6 +166,12 @@ class BosonWithTelemetry(ThreadedBoson):
         timestamp_in_ms = telemetry[0, 140] * 2**16 + telemetry[0, 141]
         timestamp = timestamp_in_ms / 1000.0
         return frame_counter, timestamp
+    
+    def _grab(self):
+        image = np.expand_dims(self.camera.grab(), -1)
+        # self.min_count = image.min()
+        # self.max_count = image.max()
+        return image
 
     
 

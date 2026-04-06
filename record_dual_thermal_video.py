@@ -57,10 +57,18 @@ Note:
                        help='Duration in seconds. Use -1 for manual stop (default: -1)')
     parser.add_argument('--compress', action='store_true',
                        help='Compress output using zstandard compression')
+    parser.add_argument('--downsample', type=int, default=1,
+                       help='Temporal downsample factor for frames (default: 1, no downsampling)')  
+    parser.add_argument('--disable-auto-ffc', action='store_true',
+                       help='Disable automatic FFC for the recording session')
+    parser.add_argument('--force-ffc-at-init', action='store_true',
+                       help='Force FFC at initialization')
+    parser.add_argument('--leave-ffc-disabled', action='store_true',
+                       help='Leave FFC disabled after recording')
     return parser.parse_args()
 
 
-def initialize_dual_cameras() -> Tuple[Optional[BosonWithTelemetry], Optional[BosonWithTelemetry]]:
+def initialize_dual_cameras(disable_auto_ffc: bool, force_ffc_at_init: bool) -> Tuple[Optional[BosonWithTelemetry], Optional[BosonWithTelemetry]]:
     """
     Initialize both thermal cameras.
     
@@ -90,11 +98,15 @@ def initialize_dual_cameras() -> Tuple[Optional[BosonWithTelemetry], Optional[Bo
     
     # Configure both cameras
     print("Performing flat field correction (FFC) on both cameras...")
-    camera_a.camera.do_ffc()
-    camera_b.camera.do_ffc()
-    camera_a.camera.set_ffc_manual()
-    camera_b.camera.set_ffc_manual()
-    time.sleep(1)  # Allow FFC to complete
+    if force_ffc_at_init:
+        camera_a.camera.do_ffc()
+        camera_b.camera.do_ffc()
+        time.sleep(1)  # Allow FFC to complete
+        print("Forced FFC performed at initialization.")
+    
+    if disable_auto_ffc:
+        camera_a.camera.set_ffc_manual()
+        camera_b.camera.set_ffc_manual()
     
     print("Both cameras connected and configured successfully.")
     return camera_a, camera_b
@@ -102,7 +114,7 @@ def initialize_dual_cameras() -> Tuple[Optional[BosonWithTelemetry], Optional[Bo
 
 def record_dual_thermal_data(camera_a: BosonWithTelemetry, 
                            camera_b: BosonWithTelemetry, 
-                           duration: int) -> bool:
+                           duration: int, downsample: int) -> bool:
     """
     Record synchronized thermal data from both cameras.
     
@@ -110,6 +122,7 @@ def record_dual_thermal_data(camera_a: BosonWithTelemetry,
         camera_a: First camera object
         camera_b: Second camera object
         duration: Recording duration in seconds (-1 for manual stop)
+        downsample: Temporal downsample factor for frames
         
     Returns:
         True if recording completed successfully, False otherwise
@@ -127,6 +140,8 @@ def record_dual_thermal_data(camera_a: BosonWithTelemetry,
         return False
     
     try:
+        camera_a.set_downsample_factor(downsample)
+        camera_b.set_downsample_factor(downsample)
         start_time = time.time()
         camera_a.start_logging()
         camera_b.start_logging()
@@ -240,17 +255,22 @@ def save_dual_data(camera_a: BosonWithTelemetry,
 
 
 def cleanup_dual_cameras(camera_a: Optional[BosonWithTelemetry], 
-                        camera_b: Optional[BosonWithTelemetry]) -> None:
+                        camera_b: Optional[BosonWithTelemetry], leave_ffc_disabled: bool = False) -> None:
     """
     Properly cleanup both camera resources.
     
     Args:
         camera_a: First camera object to cleanup
         camera_b: Second camera object to cleanup
+        leave_ffc_disabled: Whether to leave FFC disabled after recording
     """
     for camera, name in [(camera_a, "A"), (camera_b, "B")]:
         if camera:
             try:
+                if not leave_ffc_disabled:
+                    camera.camera.set_ffc_auto()
+                    print(f"Camera {name} FFC reset to automatic mode.")
+                camera.stop()
                 camera.close()
                 print(f"Camera {name} resources cleaned up.")
             except Exception as e:
@@ -260,6 +280,10 @@ def cleanup_dual_cameras(camera_a: Optional[BosonWithTelemetry],
 def main() -> None:
     """Main function to orchestrate the dual camera recording process."""
     args = parse_args()
+
+    if args.downsample < 1:
+        print("Invalid downsample factor. Must be >= 1.")
+        sys.exit(1)
 
     # Prepare output path
     output_path = Path("./dual_data") / args.output
@@ -271,13 +295,13 @@ def main() -> None:
     
     try:
         # Initialize both cameras
-        camera_a, camera_b = initialize_dual_cameras()
+        camera_a, camera_b = initialize_dual_cameras(args.disable_auto_ffc, args.force_ffc_at_init)
         if not camera_a or not camera_b:
             print("Failed to initialize both cameras. Exiting.")
             sys.exit(1)
 
         # Record data
-        if record_dual_thermal_data(camera_a, camera_b, args.duration):
+        if record_dual_thermal_data(camera_a, camera_b, args.duration, args.downsample):
             save_dual_data(camera_a, camera_b, output_file, args.compress)
             print("Dual camera recording completed successfully!")
         else:
@@ -288,7 +312,7 @@ def main() -> None:
         sys.exit(1)
         
     finally:
-        cleanup_dual_cameras(camera_a, camera_b)
+        cleanup_dual_cameras(camera_a, camera_b, args.leave_ffc_disabled)
         plt.close('all')  # Ensure all matplotlib figures are closed
 
 

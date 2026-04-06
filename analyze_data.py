@@ -19,6 +19,7 @@ from typing import Dict, Any, Tuple
 import cv2
 import zstandard as zstd
 import zipfile
+from tqdm import tqdm
 
 
 def parse_args() -> argparse.Namespace:
@@ -225,7 +226,7 @@ def play_thermal_video(data: Dict[str, Any], is_dual: bool = False) -> None:
         cv2.namedWindow("Camera A", cv2.WINDOW_NORMAL)
         cv2.namedWindow("Camera B", cv2.WINDOW_NORMAL)
         
-        for i in range(min(len(frames_a), len(frames_b))):
+        for i in tqdm(range(min(len(frames_a), len(frames_b)))):
             # Process frame A
             frame_a = frames_a[i]
             if frame_a.shape[0] > 512:  # Remove telemetry if present
