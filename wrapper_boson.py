@@ -3,9 +3,6 @@ FLIR Boson Thermal Camera Wrapper with Telemetry Support
 
 This module provides a wrapper class for FLIR Boson thermal cameras that extends
 the base ThreadedBoson class with telemetry logging capabilities.
-
-Author: [Your Name]
-Date: January 2026
 """
 
 import cv2
@@ -15,6 +12,8 @@ import numpy as np
 from typing import Optional, Tuple
 
 from flirpy.camera.threadedboson import ThreadedBoson
+
+logger = logging.getLogger(__name__)
 
 
 class BosonWithTelemetry(ThreadedBoson):
@@ -47,13 +46,16 @@ class BosonWithTelemetry(ThreadedBoson):
 
         self.configure()
         self.start()
-        # self.camera.do_ffc()  # Perform initial flat field correction
-        
+
         # Initialize logging attributes
         self.logged_images = []
         self.logged_tstamps = []
         self.enable_logging = False
         self.downsample_factor = 1 # No downsampling by default
+
+        # Dropped-frame tracking
+        self.last_frame_counter: Optional[int] = None
+        self.dropped_frame_count = 0
 
     def set_downsample_factor(self, factor: int) -> None:
         """
@@ -77,23 +79,47 @@ class BosonWithTelemetry(ThreadedBoson):
 
     def start_logging(self) -> None:
         """Start logging thermal frames and timestamps."""
+        self.last_frame_counter = None
+        self.dropped_frame_count = 0
         self.enable_logging = True
         self.add_post_callback(self.post_cap_hook)
-    
+
     def post_cap_hook(self, image: np.ndarray) -> None:
         """
         Callback function executed after each frame capture.
-        
+
         Args:
             image: Captured thermal image array
         """
         if self.enable_logging:
-            if self.downsample_factor > 1:
-                frame_counter, timestamp = self.parse_telemetry(image[:2, :, 0])
-                if frame_counter % self.downsample_factor != 0:
-                    return  # Skip this frame based on downsample factor
+            frame_counter, _ = self.parse_telemetry(image[:2, :, 0])
+            self._check_dropped_frames(frame_counter)
+
+            if self.downsample_factor > 1 and frame_counter % self.downsample_factor != 0:
+                return  # Skip this frame based on downsample factor
             self.logged_images.append(image)
             self.logged_tstamps.append(time.time())
+
+    def _check_dropped_frames(self, frame_counter: int) -> None:
+        """
+        Compare the camera's frame counter to the previous one and track any gap.
+
+        The camera's frame counter increments once per native camera frame
+        regardless of temporal downsampling, so a gap here means the driver
+        missed frames rather than that they were intentionally skipped.
+
+        Args:
+            frame_counter: Frame counter parsed from the current frame's telemetry
+        """
+        if self.last_frame_counter is not None:
+            gap = frame_counter - self.last_frame_counter - 1
+            if gap > 0:
+                self.dropped_frame_count += gap
+                logger.warning(
+                    f"Dropped {gap} frame(s): counter jumped from "
+                    f"{self.last_frame_counter} to {frame_counter}"
+                )
+        self.last_frame_counter = frame_counter
 
     def compute_timestamp_offset(self) -> None:
         """
@@ -162,15 +188,13 @@ class BosonWithTelemetry(ThreadedBoson):
             - frame_counter: Sequential frame number from camera
             - timestamp: Camera timestamp in seconds
         """
-        frame_counter = telemetry[0, 42] * 2**16 + telemetry[0, 43]
-        timestamp_in_ms = telemetry[0, 140] * 2**16 + telemetry[0, 141]
+        frame_counter = int(telemetry[0, 42]) * 2**16 + int(telemetry[0, 43])
+        timestamp_in_ms = int(telemetry[0, 140]) * 2**16 + int(telemetry[0, 141])
         timestamp = timestamp_in_ms / 1000.0
         return frame_counter, timestamp
     
     def _grab(self):
         image = np.expand_dims(self.camera.grab(), -1)
-        # self.min_count = image.min()
-        # self.max_count = image.max()
         return image
 
     
@@ -178,41 +202,45 @@ class BosonWithTelemetry(ThreadedBoson):
 if __name__ == "__main__":
     """
     Demo script for live thermal camera visualization.
-    
+
     Displays thermal camera feed with turbo colormap in real-time.
-    Press 'q' to quit the application.
+    Close the window (or Ctrl+C) to quit the application.
     """
+    import matplotlib.pyplot as plt
+
     print("Starting thermal camera live view...")
-    print("Press 'q' to quit")
-    
+    print("Close the window to quit")
+
+    closed = {"flag": False}
+
+    def on_close(event):
+        closed["flag"] = True
+
+    boson = None
     try:
         boson = BosonWithTelemetry()
-        cv2.namedWindow("Boson Thermal Camera", cv2.WINDOW_NORMAL)
-        
-        while True:
-            image, timestamp, frame_number, _ = boson.get_next_image()
 
-            # Normalize and convert to 8-bit for display
-            image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX)
-            image = np.uint8(image)
-            image = cv2.flip(image, 1)  # Mirror image for natural viewing
-            image = cv2.applyColorMap(image, cv2.COLORMAP_TURBO)
-            
-            # Print frame info (overwrite previous line)
-            print(f"Timestamp: {timestamp:.3f}, Frame: {frame_number}\r", end="")
+        image, timestamp, frame_number, _ = boson.get_next_image(hflip=True)
+        fig, ax = plt.subplots()
+        fig.canvas.mpl_connect("close_event", on_close)
+        im = ax.imshow(image, cmap="gray")
+        title = ax.set_title(f"Timestamp: {timestamp:.3f}, Frame: {frame_number}")
+        plt.show(block=False)
 
-            cv2.imshow("Boson Thermal Camera", image)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                print("\nQuitting...")
-                break
-        
+        while not closed["flag"]:
+            image, timestamp, frame_number, _ = boson.get_next_image(hflip=True)
+            im.set_data(image)
+            im.set_clim(image.min(), image.max())
+            title.set_text(f"Timestamp: {timestamp:.3f}, Frame: {frame_number}")
+            fig.canvas.draw_idle()
+            plt.pause(0.001)
+
     except Exception as e:
         print(f"\nError: {e}")
         print("Make sure the thermal camera is connected and accessible.")
-    
+
     finally:
-        if 'boson' in locals():
+        if boson is not None:
             boson.stop()
-        cv2.destroyAllWindows()
+        plt.close('all')
         print("Camera stopped and windows closed.")

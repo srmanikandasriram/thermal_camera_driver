@@ -1,284 +1,61 @@
 # Thermal Camera Driver
 
-A Python driver system for FLIR Boson thermal cameras with telemetry support. This project provides tools for recording thermal video data from single or dual camera setups.
-
-## Features
-
-- Support for single and dual FLIR Boson camera recording
-- Real-time thermal video display with colormap visualization
-- Telemetry data extraction (timestamps, frame numbers)
-- Data compression support using Zstandard
-- Configurable recording duration
-- Manual FFC (Flat Field Correction) control
-
-## Hardware Requirements
-
-- FLIR Boson thermal camera(s)
-- USB connection or serial interface
-- Compatible operating system (Windows, Linux, macOS)
+A thin wrapper around [flirpy](https://github.com/LJMUAstroecology/flirpy)'s `ThreadedBoson` class for recording and previewing thermal video from FLIR Boson cameras, with telemetry (frame counter, timestamp) extraction.
 
 ## Installation
-
-### 1. Create a Virtual Environment
-
-It's recommended to use a virtual environment to avoid dependency conflicts:
-
-```bash
-# Create virtual environment
-python -m venv thermal_camera_env
-
-# Activate virtual environment
-# On Windows:
-thermal_camera_env\Scripts\activate
-# On macOS/Linux:
-source thermal_camera_env/bin/activate
-```
-
-### 2. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Hardware Setup
-
-Ensure your FLIR Boson camera is properly connected via USB and recognized by your system. You may need to install FLIR drivers separately.
+FLIR Boson camera(s) must be connected via USB and recognized by the OS (drivers installed separately if needed).
 
 ## Usage
 
-### Single Camera Recording
-
-Record thermal video from a single Boson camera:
-
-```bash
-python record_thermal_video.py --output "recordings/thermal_video.npz" --duration 30
-```
-
-**Parameters:**
-- `--output`: Output file path (required)
-- `--duration`: Recording duration in seconds (default: 10)
-- `--compress`: Enable zstandard compression (optional)
-
-**Example:**
-```bash
-# Record 60 seconds with compression
-python record_thermal_video.py --output "data/test_recording.npz" --duration 60 --compress
-```
-
-### Dual Camera Recording
-
-Record synchronized thermal video from two Boson cameras:
-
-```bash
-python record_dual_thermal_video.py --output "dual_recording.npz" --duration 120
-```
-
-**Parameters:**
-- `--output`: Output file name (required)
-- `--duration`: Recording duration in seconds (default: -1 for manual stop)
-
-**Example:**
-```bash
-# Record until manually stopped
-python record_dual_thermal_video.py --output "experiment_001.npz"
-```
-
-### Live Preview
-
-View live thermal camera feed with visualization:
+### Live view
 
 ```bash
 python wrapper_boson.py
 ```
 
-This will open a window showing the thermal camera feed with a turbo colormap. Press 'q' to quit.
+Opens a window showing the live thermal feed with a turbo colormap. Close the window (or Ctrl+C) to quit.
 
-## Data Format
+### Recording
 
-Recorded data is saved as NumPy archive files (.npz) containing:
-
-### Single Camera:
-- `raw_thr_frames`: Array of thermal frames
-- `raw_thr_tstamps`: Timestamps for each frame
-- `thr_cam_timestamp_offset`: Camera timestamp offset
-
-### Dual Camera:
-- `raw_thr_frames_A/B`: Arrays of thermal frames from camera A/B
-- `raw_thr_tstamps_A/B`: Timestamps for each frame from camera A/B
-- `thr_cam_timestamp_offset_A/B`: Camera timestamp offsets
-
-## Data Analysis
-
-### Loading Recorded Data
-
-```python
-import numpy as np
-
-# Load single camera data
-data = np.load('recording.npz')
-frames = data['raw_thr_frames']
-timestamps = data['raw_thr_tstamps']
-offset = data['thr_cam_timestamp_offset']
-
-# Load dual camera data
-dual_data = np.load('dual_recording.npz')
-frames_a = dual_data['raw_thr_frames_A']
-frames_b = dual_data['raw_thr_frames_B']
-```
-
-### Analysis Tools
-
-Use the included analysis script for comprehensive data analysis:
+Single camera, auto-detected:
 
 ```bash
-# Display recording statistics
-python analyze_data.py --input recording.npz --show-stats
-
-# Play thermal video
-python analyze_data.py --input recording.npz --show-video
-
-# Export frames as PNG images
-python analyze_data.py --input recording.npz --export-frames --output-dir frames/
-
-# Analyze dual camera data
-python analyze_data.py --input dual_data/experiment.npz --dual --show-stats
+python record_thermal_video.py --output recording.npz --duration 30
 ```
 
-## Project Structure
+Multiple cameras, explicit device index and serial port (`DEVICE` or `DEVICE:PORT`, repeatable):
 
-```
-thermal_camera_driver/
-├── README.md                      # This file
-├── requirements.txt               # Python dependencies
-├── setup_environment.py          # Environment setup script
-├── config.ini                    # Configuration settings
-├── .gitignore                    # Git ignore rules
-│
-├── wrapper_boson.py              # Boson camera wrapper class
-├── record_thermal_video.py       # Single camera recording script
-├── record_dual_thermal_video.py  # Dual camera recording script
-├── analyze_data.py               # Data analysis and visualization
-├── test_camera.py                # Camera connection test script
-│
-├── recordings/                   # Single camera recordings (auto-created)
-├── dual_data/                    # Dual camera recordings (auto-created)
-└── exported_frames/              # Exported frame images (auto-created)
-```
-
-## Quick Start
-
-1. **Automated Setup** (Recommended):
 ```bash
-# Clone or download the project
-# Navigate to the project directory
-python setup_environment.py
+python record_thermal_video.py --camera 1:COM4 --camera 2:COM6 \
+    --output dual_recording.npz --duration 60 --compress
 ```
 
-2. **Manual Setup**:
+Key flags:
+- `--duration`: seconds to record, or `-1` to stop manually (default: 10)
+- `--downsample`: temporal downsample factor (default: 1)
+- `--compress`: compress the output with zstandard
+- `--disable-auto-ffc` / `--force-ffc-at-init` / `--leave-ffc-disabled`: flat-field correction control
+
+During recording, a small window pops up — press any key in it to stop early, or Ctrl+C.
+
+### Previewing a recording
+
 ```bash
-# Create virtual environment
-python -m venv thermal_camera_env
-
-# Activate virtual environment
-# Windows:
-thermal_camera_env\Scripts\activate
-# macOS/Linux:
-source thermal_camera_env/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+python preview_dataset.py path/to/recording.npz.zst
 ```
 
-3. **Test Camera Connection**:
-```bash
-# Test single camera
-python test_camera.py
+Browse frames with the slider or Left/Right arrow keys; see `python preview_dataset.py --help` for options (e.g. `--subtract-first-frame`).
 
-# Test dual camera setup
-python test_camera.py --dual
-```
+## Data format
 
-4. **Start Recording**:
-```bash
-# Single camera
-python record_thermal_video.py --output my_recording.npz --duration 30
+Recordings are saved as NumPy `.npz` archives (optionally zstandard-compressed to `.npz.zst`):
 
-# Dual camera
-python record_dual_thermal_video.py --output dual_recording.npz --duration 60
-```
+- Single camera: `raw_thr_frames`, `raw_thr_tstamps`, `thr_cam_timestamp_offset`
+- Multiple cameras: the same keys suffixed with `_0`, `_1`, ... per camera, in `--camera` order
 
-## Configuration
-
-### Camera Settings
-
-The system automatically configures the camera with these settings:
-- Resolution: 640x514 pixels (including 2-row telemetry)
-- Format: Y16 (16-bit grayscale)
-- Buffer size: 1 frame
-- FFC: Manual mode (performed at startup)
-
-### Telemetry Data
-
-Telemetry information is extracted from the first two rows of each frame:
-- Frame counter (bytes 42-43)
-- Timestamp in milliseconds (bytes 140-141)
-
-## Troubleshooting
-
-### Camera Connection Issues
-- **Run the test script first**: `python test_camera.py`
-- Verify the camera is properly connected via USB
-- Check that FLIR drivers are installed
-- Ensure no other applications are using the camera
-- Try different USB ports or cables
-- For dual cameras, verify COM port assignments in [config.ini](config.ini)
-
-### Permission Errors
-- Run the application as administrator (Windows) or with sudo (Linux)
-- Check camera device permissions
-
-### Dependencies Issues
-- Use the automated setup: `python setup_environment.py`
-- Manually verify packages: `pip list`
-- Ensure Python version 3.7+ is being used
-
-### Recording Issues
-- Check available disk space for large recordings
-- Ensure output directory exists and is writable
-- For dual camera setup, verify both cameras are connected and accessible
-- Monitor system resources during long recordings
-
-### Performance Issues
-- Close unnecessary applications to free system resources
-- Use compression for long recordings: `--compress`
-- Consider reducing recording resolution if needed
-- Monitor CPU and memory usage during recording
-
-## Development
-
-### Adding New Features
-
-1. Fork the repository
-2. Create a feature branch
-3. Implement your changes
-4. Add appropriate documentation
-5. Submit a pull request
-
-### Code Style
-
-- Follow PEP 8 Python style guidelines
-- Add docstrings to all functions and classes
-- Include type hints where appropriate
-- Write descriptive variable names
-
-## License
-
-[Add your license information here]
-
-## Contributing
-
-[Add contribution guidelines here]
-
-## Support
-
-[Add contact information or support channels here]
+Each frame is 640x514 (16-bit), with the first 2 rows holding telemetry data (frame counter, camera timestamp) and the remaining 512 rows holding the thermal image.

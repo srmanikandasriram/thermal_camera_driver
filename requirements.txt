@@ -1,15 +1,14 @@
 # Core dependencies
-opencv-python>=4.5.0
+opencv-python-headless>=4.5.0
 numpy>=1.21.0
 matplotlib>=3.5.0
 tqdm>=4.60.0
-pathlib>=1.0.1
 
 # Thermal camera interface
 flirpy>=0.3.0
 
-# Data compression (optional)
+# Data compression
 zstandard>=0.15.0
 
-# Serial communication for telemetry
+# Serial communication for telemetry/FFC control
 pyserial>=3.5
