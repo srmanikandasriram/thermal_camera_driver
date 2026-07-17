@@ -62,4 +62,6 @@ Each frame is 640x514 (16-bit), with the first 2 rows holding telemetry data (fr
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). This applies to the code in this repository only.
+
+This project depends on [flirpy](https://github.com/LJMUAstroecology/flirpy) (installed via `requirements.txt`, not bundled), which is separately MIT-licensed by Josh Veitch-Michaelis — see [flirpy's LICENSE.md](https://github.com/LJMUAstroecology/flirpy/blob/main/LICENSE.md) for its terms.
