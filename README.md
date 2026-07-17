@@ -1,5 +1,7 @@
 # Thermal Camera Driver
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A thin wrapper around [flirpy](https://github.com/LJMUAstroecology/flirpy)'s `ThreadedBoson` class for recording and previewing thermal video from FLIR Boson cameras, with telemetry (frame counter, timestamp) extraction.
 
 ## Installation
