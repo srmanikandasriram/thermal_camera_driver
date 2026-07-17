@@ -18,7 +18,7 @@ FLIR Boson camera(s) must be connected via USB and recognized by the OS (drivers
 python wrapper_boson.py
 ```
 
-Opens a window showing the live thermal feed with a turbo colormap. Close the window (or Ctrl+C) to quit.
+Opens a window showing the live thermal feed in grayscale. Close the window (or Ctrl+C) to quit.
 
 ### Recording
 
@@ -55,7 +55,11 @@ Browse frames with the slider or Left/Right arrow keys; see `python preview_data
 
 Recordings are saved as NumPy `.npz` archives (optionally zstandard-compressed to `.npz.zst`):
 
-- Single camera: `raw_thr_frames`, `raw_thr_tstamps`, `thr_cam_timestamp_offset`
+- Single camera: `raw_thr_frames`, `raw_thr_tstamps`, `thr_cam_timestamp_offset`, `dropped_frame_count`
 - Multiple cameras: the same keys suffixed with `_0`, `_1`, ... per camera, in `--camera` order
 
-Each frame is 640x514 (16-bit), with the first 2 rows holding telemetry data (frame counter, camera timestamp) and the remaining 512 rows holding the thermal image.
+Each frame is 640x514 (16-bit), with the first 2 rows holding telemetry data (frame counter, camera timestamp) and the remaining 512 rows holding the thermal image. `dropped_frame_count` is the number of camera frames missed during logging, detected via gaps in the telemetry frame counter.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

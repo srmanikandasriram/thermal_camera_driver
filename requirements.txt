@@ -5,7 +5,9 @@ matplotlib>=3.5.0
 tqdm>=4.60.0
 
 # Thermal camera interface
-flirpy>=0.3.0
+# Pinned exactly: this is the version wrapper_boson.py's telemetry parsing
+# and camera detection have been tested against.
+flirpy==0.6.2
 
 # Data compression
 zstandard>=0.15.0
