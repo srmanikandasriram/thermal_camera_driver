@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A thin wrapper around [flirpy](https://github.com/LJMUAstroecology/flirpy)'s `ThreadedBoson` class for recording and previewing thermal video from FLIR Boson cameras, with telemetry (frame counter, timestamp) extraction.
+A thin wrapper around [flirpy](https://github.com/LJMUAstroecology/flirpy)'s `ThreadedBoson` class for recording and previewing thermal video from FLIR Boson cameras, with telemetry (frame counter, timestamp) extraction. Main purpose is to record 60fps data from one or more cameras with minimal frame drop. 
 
 ## Installation
 
