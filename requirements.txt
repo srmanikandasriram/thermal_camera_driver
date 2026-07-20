@@ -14,3 +14,6 @@ zstandard>=0.15.0
 
 # Serial communication for telemetry/FFC control
 pyserial>=3.5
+
+# Video4Linux device metadata (Linux only; used for camera discovery)
+pyudev>=0.21.0; sys_platform == "linux"

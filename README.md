@@ -14,6 +14,16 @@ FLIR Boson camera(s) must be connected via USB and recognized by the OS (drivers
 
 ## Usage
 
+### Discovering cameras
+
+```bash
+python discover_cameras.py
+```
+
+Lists active serial (COM) ports and video devices, flags any that match the FLIR Boson's USB vendor/product ID, and — on Linux — prints ready-to-use `--camera DEVICE:PORT` pairings along with each camera's USB root hub and port.
+
+If you're recording from **multiple cameras**, check that pairing output and confirm the cameras are on different root hubs (a different `hub: usbN` value each). A single USB3 root hub cannot reliably sustain more than one Boson streaming at 60fps — cameras sharing a hub will drop frames. If two cameras share a hub, move one to a port on a different physical USB controller and re-run `discover_cameras.py` to confirm.
+
 ### Live view
 
 ```bash
@@ -30,7 +40,7 @@ Single camera, auto-detected:
 python record_thermal_video.py --output recording.npz --duration 30
 ```
 
-Multiple cameras, explicit device index and serial port (`DEVICE` or `DEVICE:PORT`, repeatable):
+Multiple cameras, explicit device index and serial port (`DEVICE` or `DEVICE:PORT`, repeatable — use `discover_cameras.py` to find these):
 
 ```bash
 python record_thermal_video.py --camera 1:COM4 --camera 2:COM6 \
