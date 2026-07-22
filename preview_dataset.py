@@ -32,9 +32,12 @@ TELEMETRY_ROWS = 2
 
 
 def load_npz(path: Path) -> dict:
-    with open(path, "rb") as fh:
-        raw = zstd.ZstdDecompressor().decompress(fh.read())
-    with np.load(io.BytesIO(raw), allow_pickle=False) as npz:
+    if path.suffix == ".zst":
+        with open(path, "rb") as fh:
+            raw = zstd.ZstdDecompressor().decompress(fh.read())
+        with np.load(io.BytesIO(raw), allow_pickle=False) as npz:
+            return {k: npz[k] for k in npz.files}
+    with np.load(path, allow_pickle=False) as npz:
         return {k: npz[k] for k in npz.files}
 
 
